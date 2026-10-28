@@ -1,5 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
+import { Link } from 'react-router-dom';
+import { apiBaseUrl, serviceError, LIVE_TIMEOUT_MS } from '../lib/liveService';
 import "../styles/SubmitDocument.css";
+import "../styles/Demo.css";
 import axios from 'axios';
 import SubmittedPage from './SubmittedPage';
 
@@ -12,9 +15,13 @@ const SubmitDocumentPage = () => {
   const [uploadFile, setUploadFile] = useState(null);
   const [error, setError] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const busy = useRef(false);
+  const API_BASE_URL = apiBaseUrl();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (busy.current || !API_BASE_URL) return;
 
     if (!mediaType || !description || !courseName || !title) {
       setError('Please fill out all fields.');
@@ -32,6 +39,8 @@ const SubmitDocumentPage = () => {
     }
 
     setError('');
+    busy.current = true;
+    setSubmitting(true);
 
     try {
       if (mediaType === 'article' || mediaType === 'video') {
@@ -43,8 +52,7 @@ const SubmitDocumentPage = () => {
           course: courseName,
           summary: description
         };
-        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
-        await axios.post(`${API_BASE_URL}/resources`, payload);
+        await axios.post(`${API_BASE_URL}/resources`, payload, { timeout: LIVE_TIMEOUT_MS });
         
       } else {
         const formData = new FormData();
@@ -54,24 +62,32 @@ const SubmitDocumentPage = () => {
         formData.append('course', courseName);
         formData.append('summary', description);
 
-        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
         await axios.post(`${API_BASE_URL}/upload`, formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
+          timeout: LIVE_TIMEOUT_MS,
         });
       }
 
       setSubmitted(true);
     } catch (err) {
-      console.error('Submission failed:', err);
-      setError(typeof err.response?.data?.detail === 'string'
-        ? err.response.data.detail
-        : 'Submission failed. Please try again.');
+      setError(serviceError(err));
+    } finally {
+      busy.current = false;
+      setSubmitting(false);
     }
   };
 
   const handleFileChange = (e) => {
     setUploadFile(e.target.files[0]);
   };
+
+  if (!API_BASE_URL) return (
+    <main className="study-page">
+      <Link to="/" className="study-back">← Home</Link>
+      <h1>Uploads are not enabled yet</h1>
+      <p>You can explore the sample lessons now. Uploads will be available once the live service is connected.</p>
+      <Link to="/ask">Explore demo</Link>
+    </main>
+  );
 
   return (
     <div className="page-container">
@@ -83,7 +99,8 @@ const SubmitDocumentPage = () => {
         <div className="content">
           <h1>Help Buddy Help You!</h1>
           <form onSubmit={handleSubmit} className="form-container">
-            {error && <p className="error">{error}</p>}
+            {error && <p className="error" role="alert">{error}</p>}
+            <fieldset disabled={submitting} className="submission-fields">
 
             {/* Title */}
             <div className="form-group-row">
@@ -178,7 +195,8 @@ const SubmitDocumentPage = () => {
               />
             </div>
 
-            <button type="submit">Submit</button>
+            <button type="submit">{submitting ? 'Submitting...' : 'Submit'}</button>
+            </fieldset>
           </form>
         </div>
       )}

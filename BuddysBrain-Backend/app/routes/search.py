@@ -1,10 +1,13 @@
-from fastapi import APIRouter
+import asyncio
+from fastapi import APIRouter, Depends, HTTPException
+from pymongo.errors import PyMongoError
 from ..models import SearchQuery
 from ..utils.embeddings import get_embedding
 from ..database import collection
 
 from ..utils.processing import run_processing
 from ..utils.ai import generate_summary
+from ..usage import reserve_request
 
 MAX_OUTPUT_TOKENS = 500
 
@@ -33,7 +36,7 @@ def summarize_resources(json_data, query: str) -> str:
         max_output_tokens=MAX_OUTPUT_TOKENS
     )
 
-@router.post("/search")
+@router.post("/search", dependencies=[Depends(reserve_request)])
 async def vector_search_and_summarize(payload: SearchQuery):
     query_vector = await run_processing(get_embedding, payload.query)
 
@@ -58,12 +61,26 @@ async def vector_search_and_summarize(payload: SearchQuery):
         {"$limit": 10}
     ]
 
-    cursor = collection.aggregate(pipeline)
     results = []
-    async for doc in cursor:
-        doc["_id"] = str(doc["_id"])
-        results.append(doc)
+    try:
+        async with asyncio.timeout(10):
+            cursor = collection.aggregate(pipeline)
+            async for doc in cursor:
+                doc["_id"] = str(doc["_id"])
+                results.append(doc)
+    except (PyMongoError, TimeoutError) as exc:
+        raise HTTPException(503, "The resource library is unavailable. Explore the demo or try again later.",
+                            headers={"X-Error-Code": "search_unavailable"}) from exc
 
-    summary = await run_processing(summarize_resources, results, payload.query)
+    try:
+        summary = await run_processing(summarize_resources, results, payload.query)
+    except HTTPException as exc:
+        if not results or exc.status_code < 500:
+            raise
+        # Retrieval succeeded. Keep real saved summaries available, without
+        # presenting them as a newly generated answer or verbatim source text.
+        return {"summary": None, "results": results, "answer_status": "unavailable",
+                "error": {"code": (exc.headers or {}).get("X-Error-Code", "ai_unavailable"),
+                          "message": str(exc.detail)}}
 
     return {"summary": summary, "results": results}

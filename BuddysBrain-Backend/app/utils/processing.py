@@ -3,7 +3,8 @@ import os
 import logging
 
 from fastapi import HTTPException
-from openai import APITimeoutError, OpenAI
+from openai import (APIConnectionError, APITimeoutError, AuthenticationError,
+                    PermissionDeniedError, RateLimitError, OpenAI)
 from starlette.concurrency import run_in_threadpool
 
 from .. import config  # noqa: F401
@@ -30,10 +31,21 @@ async def run_processing(function, *args, **kwargs):
     try:
         return await run_in_threadpool(function, *args, **kwargs)
     except ProcessingError as exc:
-        raise HTTPException(exc.status_code, str(exc)) from exc
+        raise HTTPException(exc.status_code, str(exc), headers={"X-Error-Code": "processing_failed"}) from exc
     except APITimeoutError as exc:
-        raise HTTPException(504, "AI processing timed out. Please try again.") from exc
+        raise HTTPException(504, "AI processing timed out. Please try again.",
+                            headers={"X-Error-Code": "ai_timeout"}) from exc
+    except RateLimitError as exc:
+        raise HTTPException(503, "The AI provider's usage allowance is unavailable. Explore the demo or try again later.",
+                            headers={"X-Error-Code": "ai_usage_limit"}) from exc
+    except (AuthenticationError, PermissionDeniedError) as exc:
+        raise HTTPException(503, "Live AI access needs attention from the site owner. The demo is still available.",
+                            headers={"X-Error-Code": "ai_configuration"}) from exc
+    except APIConnectionError as exc:
+        raise HTTPException(502, "The AI service could not be reached. Please try again later.",
+                            headers={"X-Error-Code": "ai_unavailable"}) from exc
     except Exception as exc:
         # Provider errors may contain credentials, URLs or document text.
         logging.getLogger(__name__).warning("%s failed (%s)", function.__name__, type(exc).__name__)
-        raise HTTPException(502, "Processing failed. Please try again later.") from exc
+        raise HTTPException(502, "Processing failed. Please try again later.",
+                            headers={"X-Error-Code": "processing_failed"}) from exc

@@ -180,3 +180,53 @@ def test_ai_failures_never_save_resources(client, db, provider, monkeypatch, fai
     assert response.status_code == 502
     assert "private provider details" not in response.text
     db.insert_one.assert_not_called()
+
+
+class ResourceCursor:
+    def __init__(self):
+        self.items = iter([{"_id": "saved-resource", "title": "Limits", "summary": "A saved summary.",
+                            "media_type": "document", "media_link": "https://example.com/notes.txt"}])
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        try:
+            return next(self.items)
+        except StopIteration:
+            raise StopAsyncIteration
+
+
+@pytest.mark.parametrize("status,code", [(401, "ai_configuration"), (403, "ai_configuration"),
+                                       (429, "ai_usage_limit"), (503, "processing_failed")])
+def test_generation_failure_keeps_retrieved_summaries(client, db, provider, status, code):
+    db.aggregate.return_value = ResourceCursor()
+    provider.status = status
+    response = client.post("/search", json={"query": "Explain limits"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["summary"] is None
+    assert data["answer_status"] == "unavailable"
+    assert data["results"][0]["summary"] == "A saved summary."
+    assert data["error"]["code"] == code
+    assert "private provider details" not in response.text
+
+
+@pytest.mark.parametrize("status,code", [(401, "ai_configuration"), (429, "ai_usage_limit")])
+def test_no_retrieval_and_ai_failure_returns_useful_error(client, db, provider, status, code):
+    db.aggregate.return_value = EmptyCursor()
+    provider.status = status
+    response = client.post("/search", json={"query": "Explain limits"})
+    assert response.status_code == 503
+    assert response.headers["X-Error-Code"] == code
+    assert "private provider details" not in response.text
+
+
+def test_database_outage_does_not_generate_unsupported_answer(client, db, provider):
+    from pymongo.errors import ServerSelectionTimeoutError
+    db.aggregate.side_effect = ServerSelectionTimeoutError("private database address")
+    response = client.post("/search", json={"query": "Explain limits"})
+    assert response.status_code == 503
+    assert response.headers["X-Error-Code"] == "search_unavailable"
+    assert "private" not in response.text
+    assert not provider.requests

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 import cloudinary.uploader
 
 from ..auth import require_resource_admin
+from ..usage import limiter, reserve_request
 from ..database import collection
 from ..models import ResourceModel, ResourceOut
 from ..utils.cloudary_config import cloudinary
@@ -34,7 +35,7 @@ def summarize_link(media_type, media_link):
     return summary.strip(), get_embedding(summary)
 
 
-@router.post("/resources", response_model=ResourceOut)
+@router.post("/resources", response_model=ResourceOut, dependencies=[Depends(reserve_request)])
 async def create_resource(resource: ResourceModel):
     resource_dict = resource.model_dump()
     summary, embedding = await run_processing(summarize_link, resource.media_type, resource.media_link)
@@ -48,6 +49,7 @@ async def create_resource(resource: ResourceModel):
 async def create_bulk_resources(resources: list[ResourceModel]):
     if not 1 <= len(resources) <= 200:
         raise HTTPException(400, "Provide between 1 and 200 resources per request.")
+    await limiter.reserve(cost=len(resources))
     resource_dicts = []
     for resource in resources:
         r_dict = resource.model_dump()
@@ -111,7 +113,7 @@ def process_upload(contents, suffix, media_type):
     return summary, embedding, uploaded["secure_url"]
 
 
-@router.post("/upload", response_model=ResourceOut)
+@router.post("/upload", response_model=ResourceOut, dependencies=[Depends(reserve_request)])
 async def upload_and_create_resource(
     file: UploadFile = File(...), title: str = Form(...),
     description: str = Form(...), course: str = Form(...),

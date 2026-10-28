@@ -1,0 +1,10 @@
+DB101 — Relational database normalization
+Original sample lesson written for the Buddy's Brain demonstration.
+
+Normalization organizes relational tables to reduce redundant facts and the insert, update, and delete anomalies that redundancy can cause. It is based on keys and dependencies between attributes, not merely on splitting large tables into smaller ones.
+
+Suppose each course has one instructor. In Enrollment(StudentID, CourseID, InstructorName), the pair (StudentID, CourseID) identifies an enrollment, but InstructorName depends on CourseID alone. Repeating the instructor for every enrollment can make updates inconsistent.
+
+One solution is Course(CourseID, InstructorName) together with Enrollment(StudentID, CourseID). The instructor is recorded once per course, and enrollment rows refer to that course. This example assumes the one-instructor-per-course rule; a different rule would require a different design.
+
+Normalization can add joins when an application reads data spanning multiple tables. Deliberate denormalization can simplify some reads, but it introduces duplicated data that must be kept consistent. Choose based on measured workload needs and correctness requirements.

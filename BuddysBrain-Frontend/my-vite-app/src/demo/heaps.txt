@@ -1,0 +1,10 @@
+CS201 — Binary heaps
+Original sample lesson written for the Buddy's Brain demonstration.
+
+A binary heap is a complete binary tree: every level is full except possibly the last, which is filled from left to right. In a min-heap, each parent is less than or equal to its children, so the smallest element is at the root.
+
+A heap does not fully sort its elements. The heap property constrains parents and children, but it does not require sibling nodes or entire subtrees to appear in sorted order.
+
+Inserting an element into a binary heap places it at the next available position, then moves it up until the heap property is restored. This takes O(log n) time in the worst case because the height of a complete binary tree is O(log n).
+
+Reading the smallest element of a min-heap takes O(1) time. Removing it takes O(log n): replace the root with the last element, then move the replacement down until the heap property is restored. A priority queue can use a heap to serve the smallest-priority value first.

@@ -1,0 +1,10 @@
+CALC101 — Limits and continuity
+Original sample lesson written for the Buddy's Brain demonstration.
+
+A limit describes the value a function approaches as its input approaches a particular number. A limit is about nearby behavior, so it can exist even when the function is undefined at that number.
+
+For x not equal to 2, the expression (x² - 4) / (x - 2) simplifies to x + 2. As x approaches 2, x + 2 approaches 4. The original expression is undefined at x = 2, but its limit there is 4.
+
+A function is continuous at a point when its value is defined there, its two-sided limit exists there, and that limit equals the function's value. Merely having a limit does not guarantee continuity.
+
+For a two-sided limit to exist, the limits from the left and the right must agree. If they approach different values, the two-sided limit does not exist.

@@ -2,17 +2,18 @@ import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import "../styles/Home.css";
 import buddyLogo from '../assets/BuddysBirthday.png';
+import { apiBaseUrl } from '../lib/liveService';
 
 const LandingPage = () => {
   const [typedText, setTypedText] = useState("")
-  const fullText = "Whhat can Buddy do for you today?"
+  const fullText = "What can Buddy do for you today?"
   const speed = 100 // typing speed in ms
 
   useEffect(() => {
     let i = 0
     const timer = setInterval(() => {
-      setTypedText((prev) => prev + fullText.charAt(i))
       i++
+      setTypedText(fullText.slice(0, i))
       if (i >= fullText.length) {
         clearInterval(timer)
       }
@@ -36,12 +37,14 @@ const LandingPage = () => {
         
         <div className="buttons-row">
         <Link className="button-link" to="/ask">
-            Ask Buddy
+            Explore demo
           </Link>
-          <Link className="button-link" to="/submit">
-            Share Some Wisdom
-          </Link>
+          {apiBaseUrl() && <>
+            <Link className="button-link" to="/ask?mode=live">Ask live</Link>
+            <Link className="button-link" to="/submit">Share Some Wisdom</Link>
+          </>}
         </div>
+        <p className="landing-demo-note">Try sample lessons and saved answers. No account or API key needed for the demo.</p>
       </div>
     </div>
   )

@@ -10,6 +10,7 @@ vi.mock('axios', () => ({ default: { post: vi.fn() } }));
 
 beforeEach(() => {
   vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test');
+  vi.stubEnv('VITE_ENABLE_LIVE', 'true');
   vi.stubGlobal('SpeechRecognition', undefined);
   vi.stubGlobal('webkitSpeechRecognition', undefined);
   vi.stubGlobal('speechSynthesis', undefined);
@@ -23,7 +24,7 @@ afterEach(() => {
 });
 
 function renderPage() {
-  render(<React.StrictMode><MemoryRouter><AskQuestion /></MemoryRouter></React.StrictMode>);
+  render(<React.StrictMode><MemoryRouter initialEntries={['/ask?mode=live']}><AskQuestion /></MemoryRouter></React.StrictMode>);
   return userEvent.setup();
 }
 
@@ -33,7 +34,7 @@ test('typed questions work without speech APIs and display the answer', async ()
   expect(screen.getByRole('button', { name: 'Start recording' }).disabled).toBe(true);
   await user.type(screen.getByLabelText('Your question'), 'What is a heap?{Enter}');
   expect(await screen.findByText('A heap is a tree.')).toBeTruthy();
-  expect(axios.post).toHaveBeenCalledWith('https://api.example.test/search', { query: 'What is a heap?' }, { timeout: 65000 });
+  expect(axios.post).toHaveBeenCalledWith('https://api.example.test/search', { query: 'What is a heap?' }, { timeout: 90000, signal: expect.any(AbortSignal) });
 });
 
 test('an in-flight question cannot be submitted twice', async () => {
@@ -61,8 +62,8 @@ test('service errors preserve the question for retry and do not claim no matches
 test('missing API configuration does not request an undefined address', async () => {
   vi.stubEnv('VITE_API_BASE_URL', '');
   vi.spyOn(console, 'error').mockImplementation(() => {});
-  const user = renderPage();
-  await user.type(screen.getByLabelText('Your question'), 'Explain sorting{Enter}');
-  expect(await screen.findByText('The search service is unavailable. Please try again later.')).toBeTruthy();
+  renderPage();
+  expect(screen.getByText('Demo · saved examples')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Ask live' }).disabled).toBe(true);
   expect(axios.post).not.toHaveBeenCalled();
 });

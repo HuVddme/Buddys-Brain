@@ -1,20 +1,23 @@
 """Use real FastAPI routes with fake storage/embeddings and no network access."""
+import os
 import socket
 import sys
 from types import ModuleType
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 database = ModuleType("app.database")
 database.collection = Mock()
+database.usage_collection = Mock()
 sys.modules["app.database"] = database
 embeddings = ModuleType("app.utils.embeddings")
 embeddings.get_embedding = Mock(return_value=[0.1, 0.2])
 sys.modules["app.utils.embeddings"] = embeddings
 
-from app.main import app
+with patch.dict(os.environ, {"FRONTEND_ORIGINS": "http://localhost:5173"}):
+    from app.main import app
 from app.routes import resources, search
 
 
@@ -28,6 +31,10 @@ def isolated(monkeypatch):
     monkeypatch.delenv("RESOURCE_ADMIN_TOKEN", raising=False)
     for variable in ("OPENAI_MODEL", "OPENAI_REASONING_EFFORT", "OPENAI_MAX_COMPLETION_TOKENS"):
         monkeypatch.delenv(variable, raising=False)
+    # Ordinary route tests isolate the quota store. Dedicated usage tests restore
+    # the real reservation method and exercise rejection before paid work.
+    from app.usage import limiter
+    monkeypatch.setattr(limiter, "reserve", AsyncMock())
     from app.utils.processing import get_ai_client
     get_ai_client.cache_clear()
     yield
