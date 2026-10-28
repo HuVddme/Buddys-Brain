@@ -26,6 +26,8 @@ def isolated(monkeypatch):
     monkeypatch.setattr(socket, "getaddrinfo", no_network)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("RESOURCE_ADMIN_TOKEN", raising=False)
+    for variable in ("OPENAI_MODEL", "OPENAI_REASONING_EFFORT", "OPENAI_MAX_COMPLETION_TOKENS"):
+        monkeypatch.delenv(variable, raising=False)
     from app.utils.processing import get_ai_client
     get_ai_client.cache_clear()
     yield

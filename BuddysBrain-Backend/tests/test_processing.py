@@ -94,7 +94,7 @@ def test_empty_document_never_calls_ai(tmp_path, monkeypatch):
     path = tmp_path / "empty.txt"
     path.write_text("  \n")
     ai = Mock()
-    monkeypatch.setattr(documents, "get_ai_client", ai)
+    monkeypatch.setattr(documents, "generate_summary", ai)
     with pytest.raises(processing.ProcessingError) as error:
         documents.summarize_document(str(path))
     assert error.value.status_code == 422

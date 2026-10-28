@@ -1,8 +1,7 @@
-import os
 import base64
 import mimetypes
 
-from ...processing import ProcessingError, get_ai_client
+from ...ai import generate_summary
 
 
 def summarize_image(image_path: str) -> str:
@@ -23,9 +22,7 @@ def summarize_image(image_path: str) -> str:
     # Create data URL
     data_url = f"data:{mime_type};base64,{base64_image}"
 
-    # GPT-4o Vision API Call
-    response = get_ai_client().chat.completions.create(
-        model="gpt-4o",
+    return generate_summary(
         messages=[
             {"role": "system", "content": "You help students by summarizing the academic or technical content within images."},
             {
@@ -45,8 +42,5 @@ def summarize_image(image_path: str) -> str:
                 ]
             }
         ],
-        max_tokens=500,
-        temperature=0.3
+        max_output_tokens=500
     )
-
-    return response.choices[0].message.content.strip()

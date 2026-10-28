@@ -4,18 +4,15 @@ from urllib.parse import parse_qs, urlsplit
 import requests
 from youtube_transcript_api import YouTubeTranscriptApi
 
-from ...processing import ProcessingError, get_ai_client
+from ...processing import ProcessingError
+from ...ai import generate_summary
 from ...safe_fetch import fetch_article_text
 
 TRUNCATE_LIMIT = 30000
 
 
 def get_chat_summary(messages, max_tokens):
-    response = get_ai_client().chat.completions.create(
-        model="gpt-3.5-turbo", messages=messages,
-        max_tokens=max_tokens, temperature=0.3,
-    )
-    return response.choices[0].message.content.strip()
+    return generate_summary(messages, max_output_tokens=max_tokens)
 
 
 def summarize_article(url, max_tokens=300):
