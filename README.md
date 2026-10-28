@@ -7,8 +7,8 @@ Buddy's Brain is an intelligent, AI-powered educational assistant designed to he
 ## Features
 
 - **Semantic Vector Search**: Quickly retrieves educational resources relevant to the student's query.
-- **AI-Generated Summaries**: Uses GPT-4o to provide concise, clear, five-sentence summaries or explanations.
-- **Fallback Summaries**: Provides brief, AI-generated summaries from internet knowledge when internal resources aren't available.
+- **AI-Generated Summaries**: Uses GPT-6 Luna to provide concise summaries and explanations.
+- **Fallback Summaries**: Provides brief, AI-generated summaries from general model knowledge (without live web browsing) when internal resources aren't available.
 - **Voice Interaction**: Supports natural voice-based interactions using TTS and STT technologies.
 - **Media Uploads**: Allows users to upload different media types such as images, videos, links, and documents to assist future students.
 
@@ -16,7 +16,7 @@ Buddy's Brain is an intelligent, AI-powered educational assistant designed to he
 
 - **Frontend**: React
 - **Backend**: FastAPI, MongoDB (with vector search capabilities)
-- **AI Model**: OpenAI GPT-4o
+- **AI Model**: OpenAI GPT-6 Luna
 - **Deployment**: Deployed via Vercel (frontend) and Railway (backend), Docker-friendly and cloud-compatible
 
 ## Getting Started
@@ -32,7 +32,7 @@ Buddy's Brain is an intelligent, AI-powered educational assistant designed to he
 Clone the repository and install dependencies:
 
 ```bash
-git clone https://github.com/RobelK1738/Buddys-Brain
+git clone https://github.com/HuVddme/Buddys-Brain
 cd Buddys-Brain/BuddysBrain-Backend
 python3 -m venv .venv
 source .venv/bin/activate
@@ -50,6 +50,48 @@ CLOUDINARY_CLOUD_NAME=your_cloud_name
 CLOUDINARY_API_KEY=your_api_key
 CLOUDINARY_API_SECRET=your_api_secret
 ```
+
+### AI model configuration
+
+All document, image, article, YouTube and search summaries use the shared Chat
+Completions client. Defaults work without adding new variables to an existing
+backend `.env`:
+
+```dotenv
+OPENAI_MODEL=gpt-6-luna
+OPENAI_REASONING_EFFORT=none
+```
+
+Keep your existing `OPENAI_API_KEY` private on the backend. Your OpenAI project
+must have access to Luna and available API quota. A model change alone does not
+fix missing credentials, exhausted quota or an unavailable backend.
+
+The default preserves non-reasoning behavior and temperature 0.3. Output budgets
+remain 300 tokens for article/video summaries and 500 for documents, images and
+answers, now using `max_completion_tokens`. Empty, refused and truncated responses
+return errors instead of being stored. For a later reasoning comparison, set
+`OPENAI_REASONING_EFFORT=low` and `OPENAI_MAX_COMPLETION_TOKENS=4096`; temperature is
+omitted when reasoning is enabled. The override applies to every task and includes
+both reasoning and visible output tokens, so raising it can increase cost/latency.
+Restart the backend after changing settings. Other model IDs require checking
+that model's parameter and image-input compatibility first.
+
+Text prompts, including questions and instructions, are limited to 400,000 UTF-8
+bytes. This replaces the old 100,000-token estimate with an application size limit,
+not an exact Luna token count; non-English text can reach the limit sooner.
+It avoids unsupported tokenizer mappings and tokenizer downloads during requests.
+Image data is subject to the existing upload size limit separately.
+
+MongoDB vectors and the `all-MiniLM-L6-v2` embedding model are unchanged; existing
+resources need no reindexing. The standalone search utility uses the same client:
+run `python -m app.utils.summarization.Search.main` from the backend directory with
+its `resources.json` input in that working directory.
+
+Migration references: [Luna model](https://developers.openai.com/api/docs/models/gpt-6-luna),
+[parameter compatibility](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-6-astra),
+and [Chat Completions output limits](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create).
+Mocked tests verify request compatibility and failure handling; live answer quality,
+latency and cost still need measurement with your own configured services.
 
 ### Starting the Server
 
