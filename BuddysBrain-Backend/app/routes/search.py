@@ -2,13 +2,9 @@ from fastapi import APIRouter
 from ..models import SearchQuery
 from ..utils.embeddings import get_embedding
 from ..database import collection
-import os
 import tiktoken
-from openai import OpenAI
-from dotenv import load_dotenv
 
-load_dotenv()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+from ..utils.processing import get_ai_client, run_processing
 
 MODEL = "gpt-4o"
 MAX_INPUT_TOKENS = 100_000
@@ -39,7 +35,7 @@ def summarize_resources(json_data, query: str) -> str:
             f"Provide a concise, short, clear, 3-sentence explanation of '{query}'."
         )
 
-    response = client.chat.completions.create(
+    response = get_ai_client().chat.completions.create(
         model=MODEL,
         messages=[
             {"role": "system", "content": "You summarize educational resources concisely and clearly."},
@@ -53,7 +49,7 @@ def summarize_resources(json_data, query: str) -> str:
 
 @router.post("/search")
 async def vector_search_and_summarize(payload: SearchQuery):
-    query_vector = get_embedding(payload.query)
+    query_vector = await run_processing(get_embedding, payload.query)
 
     pipeline = [
         {"$vectorSearch": {
@@ -82,6 +78,6 @@ async def vector_search_and_summarize(payload: SearchQuery):
         doc["_id"] = str(doc["_id"])
         results.append(doc)
 
-    summary = summarize_resources(results, payload.query)
+    summary = await run_processing(summarize_resources, results, payload.query)
 
     return {"summary": summary, "results": results}

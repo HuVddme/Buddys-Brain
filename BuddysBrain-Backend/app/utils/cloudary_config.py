@@ -1,17 +1,12 @@
-import cloudinary
 import os
-from dotenv import load_dotenv
 
+import cloudinary
 
-load_dotenv(dotenv_path='../../.env')
-
-CLOUD_NAME = os.getenv("CLOUD_NAME")
-API_KEY = os.getenv("API_KEY")
-API_SECRET = os.getenv("API_SECRET")
+from .. import config  # noqa: F401 - load the backend .env before reading settings
 
 cloudinary.config(
-    cloud_name="dbrhihytl",
-    api_key="212724769336457",
-    api_secret="7wCEBQZ59fpTnjVPWyolJYEIlrM",
-    secure=True
+    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+    api_key=os.getenv("CLOUDINARY_API_KEY"),
+    api_secret=os.getenv("CLOUDINARY_API_SECRET"),
+    secure=True,
 )

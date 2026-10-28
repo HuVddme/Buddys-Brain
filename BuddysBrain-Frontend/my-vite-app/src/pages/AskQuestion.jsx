@@ -13,75 +13,51 @@ const AskQuestionPage = () => {
   const [selectedResult, setSelectedResult] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [audioEnabled, setAudioEnabled] = useState(true);
-  const [voices, setVoices] = useState([]);
+  const [speechError, setSpeechError] = useState('');
+  const [hasSearchResult, setHasSearchResult] = useState(false);
   const [selectedVoice, setSelectedVoice] = useState(null);
 
   const recognitionRef = useRef(null);
-  const timeoutRef = useRef(null);
-  const isInitializedRef = useRef(false);
+  const requestBusyRef = useRef(false);
+  const speechSupported = Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
+  const audioSupported = Boolean(window.speechSynthesis);
   const chatContainerRef = useRef(null);
 
-  // Initialize speech recognition and synthesis
+  // Voice is optional: typed questions also work without browser speech APIs.
   useEffect(() => {
-    if (!isInitializedRef.current) {
-      // Initialize speech recognition
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        recognitionRef.current = new SpeechRecognition();
-        recognitionRef.current.continuous = true;
-        recognitionRef.current.interimResults = true;
-        recognitionRef.current.lang = 'en-US';
-
-        recognitionRef.current.onresult = (event) => {
-          const transcript = Array.from(event.results)
-            .map(result => result[0].transcript)
-            .join(' ');
-          setQuestion(transcript);
-        };
-
-        recognitionRef.current.onerror = (event) => {
-          console.error('Speech recognition error:', event.error);
-          setRecording(false);
-          speakMessage("I had trouble hearing you. Please try again.");
-        };
-
-        recognitionRef.current.onend = () => {
-          console.log("Speech recognition ended");
-        };
-
-        isInitializedRef.current = true;
-      }
-
-      // Initialize speech synthesis voices
-      const loadVoices = () => {
-        const availableVoices = window.speechSynthesis.getVoices();
-        console.log("Available voices:", availableVoices);
-        setVoices(availableVoices);
-        console.log("Available voices:", availableVoices);
-          // Force selection of Google UK English Male if available
-        const googleUKMale = availableVoices.find(voice => voice.name === 'Google UK English Male');
-
-        // Fall back to first available if not found
-        setSelectedVoice(googleUKMale);
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = SpeechRecognition ? new SpeechRecognition() : null;
+    recognitionRef.current = recognition;
+    if (recognition) {
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+      recognition.onresult = (event) => {
+        setQuestion(Array.from(event.results).map(result => result[0].transcript).join(' '));
       };
-
-      // Chrome requires this event for voice loading
-      if (speechSynthesis.onvoiceschanged !== undefined) {
-        speechSynthesis.onvoiceschanged = loadVoices;
-      }
-      
-      // Initial load attempt
-      loadVoices();
+      recognition.onerror = () => {
+        setRecording(false);
+        setSpeechError('Microphone unavailable. You can type your question below.');
+      };
+      recognition.onend = () => setRecording(false);
     }
-
+    const synthesis = window.speechSynthesis;
+    const loadVoices = () => {
+      const available = synthesis?.getVoices() || [];
+      setSelectedVoice(available.find(voice => voice.name === 'Google UK English Male') || available[0] || null);
+    };
+    synthesis?.addEventListener('voiceschanged', loadVoices);
+    loadVoices();
     return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch (err) {}
+      if (recognition) {
+        recognition.onresult = null;
+        recognition.onerror = null;
+        recognition.onend = null;
+        recognition.abort();
       }
-      window.speechSynthesis.cancel(); // Cancel any ongoing speech
+      recognitionRef.current = null;
+      synthesis?.removeEventListener('voiceschanged', loadVoices);
+      synthesis?.cancel();
     };
   }, []);
 
@@ -94,7 +70,7 @@ const AskQuestionPage = () => {
 
   // Function to speak messages
   const speakMessage = (text) => {
-    if (!audioEnabled) return;
+    if (!audioEnabled || !window.speechSynthesis) return;
     
     // Cancel any current speech
     window.speechSynthesis.cancel();
@@ -107,26 +83,30 @@ const AskQuestionPage = () => {
     // Customize speech parameters
     utterance.rate = 1.15;  // Speed
     utterance.pitch = 1.0; // Pitch
-    utterance.volume = 1.3; // Volume
+    utterance.volume = 1.0; // Volume
     
     window.speechSynthesis.speak(utterance);
   };
 
   // Function to submit question & call backend
   const submitQuestion = async () => {
-    if (!question.trim()) return;
+    if (!question.trim() || recording || requestBusyRef.current) return;
+    requestBusyRef.current = true;
   
-    const userMessage = { sender: 'user', text: question };
+    const userMessage = { sender: 'user', text: question.trim() };
     setMessages(prev => [...prev, userMessage]);
   
     setIsLoading(true);
+    setHasSearchResult(false);
+    setResults([]);
     setQuestion('');
   
     try {
       const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+      if (!API_BASE_URL) throw new Error('Search service is not configured.');
       const response = await axios.post(`${API_BASE_URL}/search`, {
         query: userMessage.text,
-      });
+      }, { timeout: 65000 });
   
       const buddyResponse = {
         sender: 'buddy',
@@ -134,50 +114,43 @@ const AskQuestionPage = () => {
       };
   
       setMessages(prev => [...prev, buddyResponse]);
-      speakMessage(buddyResponse.text);
+      if (window.speechSynthesis) {
+        try { speakMessage(buddyResponse.text); } catch (error) { console.warn('Audio playback unavailable', error); }
+      }
   
       setResults(response.data.results || []);
+      setHasSearchResult(true);
     } catch (error) {
       console.error('Error fetching search results:', error);
       const errorMessage = {
         sender: 'buddy',
-        text: "I'm having trouble connecting to the search service. Please try again later."
+        text: typeof error.response?.data?.detail === 'string'
+          ? error.response.data.detail
+          : "The search service is unavailable. Please try again later."
       };
       setMessages(prev => [...prev, errorMessage]);
-      speakMessage(errorMessage.text);
+      setQuestion(userMessage.text);
     } finally {
       setIsLoading(false);
+      requestBusyRef.current = false;
     }
   };
   
     
 
   const toggleRecording = () => {
-    if (!recording) {
-      setQuestion('');
-      try {
-        recognitionRef.current?.start();
-        console.log("Started recording");
-        setRecording(true);
-        speakMessage("I'm listening. Please ask your question.");
-      } catch (err) {
-        console.error("Error starting recording:", err);
-        speakMessage("I couldn't access your microphone. Please check your browser permissions.");
-      }
+    if (!recognitionRef.current || isLoading) return;
+    setSpeechError('');
+    if (recording) {
+      recognitionRef.current.stop();
+      // Wait for the final transcript, then let the user review and submit it.
     } else {
       try {
-        recognitionRef.current?.stop();
-        console.log("Stopped recording");
-      } catch (err) {
-        console.error("Error stopping recording:", err);
-      }
-      setRecording(false);
-      
-      // Only submit if there's a question
-      if (question.trim()) {
-        submitQuestion();
-      } else {
-        speakMessage("I didn't catch that. Please try speaking again.");
+        window.speechSynthesis?.cancel();
+        recognitionRef.current.start();
+        setRecording(true);
+      } catch {
+        setSpeechError('Microphone unavailable. You can type your question below.');
       }
     }
   };
@@ -187,13 +160,12 @@ const AskQuestionPage = () => {
     setAudioEnabled(newState);
     
     if (!newState) {
-      window.speechSynthesis.cancel(); // Stop any current speech
+      window.speechSynthesis?.cancel(); // Stop any current speech
     }
   };
 
   const handleResultClick = (result) => {
     setSelectedResult(result);
-    const description = `You selected: ${result.title}. ${result.summary ? result.summary.substring(0, 100) + '...' : ''}`;
   };
 
   const handleCloseModal = () => {
@@ -233,24 +205,40 @@ const AskQuestionPage = () => {
         
         <div className="audio-toggle">
           <button 
-            onClick={toggleAudio} 
+            onClick={toggleAudio}
+            disabled={!audioSupported}
             className="audio-btn"
             aria-label={audioEnabled ? "Disable audio responses" : "Enable audio responses"}
             title={audioEnabled ? "Disable audio responses" : "Enable audio responses"}
           >
             {audioEnabled ? <FaVolumeUp size={20} /> : <FaVolumeMute size={20} />}
           </button>
-          <span className="audio-label">{audioEnabled ? "Audio On" : "Audio Off"}</span>
+          <span className="audio-label">{audioSupported && audioEnabled ? "Audio On" : "Audio Off"}</span>
         </div>
   
         {/* Question form and mic button */}
         <form onSubmit={(e) => { e.preventDefault(); submitQuestion(); }} className="form-container">
           <div className="form-group">
+            <label htmlFor="question">Your question</label>
+            <input
+              id="question"
+              className="question-input"
+              type="text"
+              value={question}
+              onChange={(event) => setQuestion(event.target.value)}
+              placeholder="Ask about your course material..."
+              disabled={isLoading || recording}
+              required
+            />
             <div className="button-group">
+              <button type="submit" className="submit-btn" disabled={isLoading || recording || !question.trim()}>
+                {isLoading ? 'Asking...' : 'Ask Buddy'}
+              </button>
               <button
                 type="button"
                 className={`record-btn ${recording ? 'recording' : ''}`}
                 onClick={toggleRecording}
+                disabled={!speechSupported || isLoading}
                 aria-label={recording ? "Stop recording" : "Start recording"}
               >
                 {recording ? <FaStop size={20} /> : <FaMicrophone size={20} />}
@@ -259,6 +247,7 @@ const AskQuestionPage = () => {
           </div>
         </form>
   
+        {speechError && <p role="status">{speechError}</p>}
         {/* Recording indicator */}
         <div className="recording-indicator">
           {recording ? (
@@ -270,7 +259,7 @@ const AskQuestionPage = () => {
             <div>
               {isLoading ? 
                 <div className="loading-spinner">Looking up your question...</div> : 
-                'Click the microphone icon to start recording your question, or type it above.'
+                (speechSupported ? 'Type your question, or record it and select Ask Buddy when ready.' : 'Type your question above to ask Buddy.')
               }
             </div>
           )}
@@ -331,10 +320,10 @@ const AskQuestionPage = () => {
             </div>
           </div>
         ) : (
-          messages.length > 0 && !isLoading && (
+          hasSearchResult && !isLoading && (
             <div className="no-results-notice">
               <p>
-                No internal resources found. Buddy suggested some external resources above. Click the links to view them.
+                No internal resources matched this question.
               </p>
             </div>
           )

@@ -84,6 +84,7 @@ h1 {
 }
 
 .question-input {
+  box-sizing: border-box;
   padding: 16px;
   border-radius: 8px;
   border: 1px solid #e0e0e0;
@@ -148,6 +149,14 @@ h1 {
 .submit-btn:hover {
   background-color: #27ae60;
   transform: translateY(-2px);
+}
+
+.submit-btn:disabled,
+.record-btn:disabled,
+.audio-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
 }
 
 /* Recording Indicator */

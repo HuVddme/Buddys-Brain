@@ -63,7 +63,9 @@ const SubmitDocumentPage = () => {
       setSubmitted(true);
     } catch (err) {
       console.error('Submission failed:', err);
-      setError('Submission failed. Please try again.');
+      setError(typeof err.response?.data?.detail === 'string'
+        ? err.response.data.detail
+        : 'Submission failed. Please try again.');
     }
   };
 
@@ -145,7 +147,7 @@ const SubmitDocumentPage = () => {
                 <input
                   type="file"
                   id="uploadFile"
-                  accept={mediaType === 'document' ? ".pdf,.doc,.docx" : "image/*"}
+                  accept={mediaType === 'document' ? ".pdf,.docx,.txt" : ".png,.jpg,.jpeg,.webp,.gif"}
                   onChange={handleFileChange}
                 />
                 {uploadFile && <p className="file-info">Selected: {uploadFile.name}</p>}

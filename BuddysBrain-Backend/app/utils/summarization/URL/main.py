@@ -1,74 +1,73 @@
-import os
+import re
+from urllib.parse import parse_qs, urlsplit
+
 import requests
-from openai import OpenAI
 from youtube_transcript_api import YouTubeTranscriptApi
-from dotenv import load_dotenv
 
-load_dotenv(dotenv_path='../.env')
+from ...processing import ProcessingError, get_ai_client
+from ...safe_fetch import fetch_article_text
 
+TRUNCATE_LIMIT = 30000
 
-TRUNCATE_LIMIT = 30000  # approx. 12,000–15,000 words
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-client = OpenAI(api_key=OPENAI_API_KEY)
 
 def get_chat_summary(messages, max_tokens):
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=messages,
-        max_tokens=max_tokens,
-        temperature=0.3
+    response = get_ai_client().chat.completions.create(
+        model="gpt-3.5-turbo", messages=messages,
+        max_tokens=max_tokens, temperature=0.3,
     )
     return response.choices[0].message.content.strip()
 
+
 def summarize_article(url, max_tokens=300):
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        content = response.text[:TRUNCATE_LIMIT]
+    content = fetch_article_text(url)[:TRUNCATE_LIMIT]
+    if not content.strip():
+        raise ProcessingError("The article is empty.", 422)
+    return get_chat_summary([
+        {"role": "system", "content": "Summarize the educational content of web pages for university students. Ignore formatting and unrelated content."},
+        {"role": "user", "content": f"Summarize the key ideas in under 200 words:\n\n{content}"},
+    ], max_tokens)
 
-        messages = [
-            {
-                "role": "system",
-                "content": "You are a helpful assistant that summarizes the **educational content** of web pages for university students. Focus only on the main topics, arguments, and insights. Ignore formatting, layout, or non-relevant details."
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Please summarize the **subject matter** and **key ideas** in the following web page content. "
-                    f"Keep your summary clear, focused, and under 200 words:\n\n{content}"
-                )
-            }
-        ]
-        return get_chat_summary(messages, max_tokens)
-
-    except Exception as e:
-        return f"❌ Error processing {url}: {e}"
 
 def extract_video_id(video_url):
-    if "youtu.be" in video_url:
-        return video_url.split('/')[-1].split('?')[0]
-    return video_url.split('v=')[1].split('&')[0]
+    try:
+        parts = urlsplit(video_url)
+        if parts.scheme not in {"http", "https"} or parts.username or parts.password:
+            raise ValueError
+        if parts.hostname in {"youtu.be", "www.youtu.be"}:
+            video_id = parts.path.lstrip("/")
+        elif parts.hostname in {"youtube.com", "www.youtube.com", "m.youtube.com"}:
+            if parts.path == "/watch":
+                video_id = parse_qs(parts.query).get("v", [""])[0]
+            elif parts.path.startswith(("/shorts/", "/embed/")):
+                video_id = parts.path.split("/")[2]
+            else:
+                raise ValueError
+        else:
+            raise ValueError
+        if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
+            raise ValueError
+        return video_id
+    except ValueError as exc:
+        raise ProcessingError("Provide a valid YouTube video URL.", 400) from exc
+
+
+class TimeoutSession(requests.Session):
+    def request(self, method, url, **kwargs):
+        kwargs.setdefault("timeout", (5, 15))
+        return super().request(method, url, **kwargs)
+
 
 def summarize_video(video_url, max_tokens=300):
+    video_id = extract_video_id(video_url)
     try:
-        video_id = extract_video_id(video_url)
-        transcript = YouTubeTranscriptApi.get_transcript(video_id)
-        transcript_text = " ".join(item['text'] for item in transcript)[:TRUNCATE_LIMIT]
-
-        messages = [
-            {
-                "role": "system",
-                "content": "You are an assistant that summarizes the **educational content** of YouTube video transcripts for students. Focus on concepts, explanations, and examples. Keep it clear and ignore filler or intros."
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Summarize the **key educational content** of this YouTube video transcript in a way that’s helpful to students. "
-                    f"Limit your summary to 200 words. Be clear, thorough, and content-focused:\n\n{transcript_text}"
-                )
-            }
-        ]
-        return get_chat_summary(messages, max_tokens)
-
-    except Exception as e:
-        return f"❌ Error summarizing video: {e}"
+        with TimeoutSession() as session:
+            transcript = YouTubeTranscriptApi(http_client=session).fetch(video_id)
+        text = " ".join(item.text for item in transcript)[:TRUNCATE_LIMIT]
+    except Exception as exc:
+        raise ProcessingError("The YouTube transcript is unavailable. Try another video.") from exc
+    if not text.strip():
+        raise ProcessingError("The video transcript is empty.", 422)
+    return get_chat_summary([
+        {"role": "system", "content": "Summarize the educational content of YouTube transcripts for students. Focus on concepts and explanations."},
+        {"role": "user", "content": f"Summarize the key educational ideas in under 200 words:\n\n{text}"},
+    ], max_tokens)

@@ -1,8 +1,7 @@
 import os
-from dotenv import load_dotenv
+from . import config  # noqa: F401
 from motor.motor_asyncio import AsyncIOMotorClient
 
-load_dotenv()
 
 MONGO_USER = os.getenv("MONGO_USER")
 MONGO_PASSWORD = os.getenv("MONGO_PASSWORD")
