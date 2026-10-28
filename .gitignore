@@ -1,3 +1,10 @@
 BuddysBrain-Backend/.env
 BuddysBrain-Backend/app/utils/summarization/.env
 BuddysBrain-Frontend/my-vite-app/.env
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/

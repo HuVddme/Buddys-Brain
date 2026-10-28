@@ -1,0 +1,4 @@
+# Tests mock embeddings; no Torch/model download or external credentials needed.
+-r requirements-api.txt
+pytest>=8,<10
+httpx>=0.27,<1

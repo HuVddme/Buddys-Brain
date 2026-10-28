@@ -1,12 +1,9 @@
 import os
 import base64
 import mimetypes
-from openai import OpenAI
-from dotenv import load_dotenv
 
-load_dotenv(dotenv_path='../../../.env')
+from ...processing import ProcessingError, get_ai_client
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def summarize_image(image_path: str) -> str:
     """
@@ -27,7 +24,7 @@ def summarize_image(image_path: str) -> str:
     data_url = f"data:{mime_type};base64,{base64_image}"
 
     # GPT-4o Vision API Call
-    response = client.chat.completions.create(
+    response = get_ai_client().chat.completions.create(
         model="gpt-4o",
         messages=[
             {"role": "system", "content": "You help students by summarizing the academic or technical content within images."},

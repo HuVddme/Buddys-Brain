@@ -1,13 +1,10 @@
 import os
 import pdfplumber
 import docx
-from openai import OpenAI
 import tiktoken
-from dotenv import load_dotenv
 
-load_dotenv(dotenv_path='../../../.env')
+from ...processing import ProcessingError, get_ai_client
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 MODEL = "gpt-4o"
 MAX_INPUT_TOKENS = 100_000  # safe limit for full input
@@ -36,17 +33,20 @@ def summarize_document(file_path: str) -> str:
     ext = os.path.splitext(file_path)[1].lower()
     if ext == ".pdf":
         full_text = read_pdf(file_path)
-    elif ext in [".docx", ".doc"]:
+    elif ext == ".docx":
         full_text = read_docx(file_path)
     elif ext == ".txt":
         full_text = read_txt(file_path)
     else:
-        raise ValueError("Unsupported file type")
+        raise ProcessingError("Supported documents: PDF, DOCX and TXT.", 415)
+
+    if not full_text.strip():
+        raise ProcessingError("The document has no readable text.", 422)
 
     token_count = tokenize_count(full_text)
 
     if token_count > MAX_INPUT_TOKENS:
-        raise ValueError(f"Document too large to process in one shot (>{MAX_INPUT_TOKENS} tokens).")
+        raise ProcessingError("The document contains too much text to process.", 413)
 
     # Build prompt for full scan summarization
     prompt = (
@@ -56,7 +56,7 @@ def summarize_document(file_path: str) -> str:
     )
 
     print("🧠 Summarizing entire document...")
-    response = client.chat.completions.create(
+    response = get_ai_client().chat.completions.create(
         model=MODEL,
         messages=[
             {"role": "system", "content": "You summarize academic documents for university students."},
