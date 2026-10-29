@@ -18,13 +18,32 @@ Buddy's Brain is an intelligent, AI-powered educational assistant designed to he
 - **Frontend**: React
 - **Backend**: FastAPI, MongoDB (with vector search capabilities)
 - **AI Model**: OpenAI GPT-6 Luna
-- **Deployment**: Deployed via Vercel (frontend) and Railway (backend), Docker-friendly and cloud-compatible
+- **Deployment**: Vercel Services configuration for this fork's frontend and API; a separate frontend-only demo deployment is also supported.
+
+## Repository layout
+
+```text
+frontend/             React/Vite app, demo content and frontend tests
+backend/
+  app/routes/         HTTP validation, database operations and responses
+  app/services/       Reusable ingestion, AI, embedding and storage operations
+  app/utils/          URL safety and MongoDB serialization helpers
+  tests/              API, failure-handling and service tests
+docs/                 Architecture and deployment decisions
+vercel.json           Public routing and configuration for web + api
+```
+
+See [architecture and deployment decisions](docs/architecture.md). The API and
+frontend stay in one repository and can also run independently. The processing
+services currently run in a request's thread pool; a durable ingestion worker
+and retry/status tracking are planned, not implemented by this cleanup.
 
 ## Getting Started
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.12 for the backend deployment (the isolated test suite also runs on 3.11)
+- Node.js and npm for the frontend
 - MongoDB with vector search indexes
 - OpenAI API key
 
@@ -34,7 +53,7 @@ Clone the repository and install dependencies:
 
 ```bash
 git clone https://github.com/HuVddme/Buddys-Brain
-cd Buddys-Brain/BuddysBrain-Backend
+cd Buddys-Brain/backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -57,7 +76,7 @@ CLOUDINARY_API_SECRET=your_api_secret
 The frontend is independently runnable. No backend or environment file is needed:
 
 ```bash
-cd BuddysBrain-Frontend/my-vite-app
+cd frontend
 npm ci
 npm run dev
 ```
@@ -75,7 +94,7 @@ In your own Vercel account, import **HuVddme/Buddys-Brain** as a **new project**
 
 | Setting | Value |
 | --- | --- |
-| Root Directory | `BuddysBrain-Frontend/my-vite-app` |
+| Root Directory | `frontend` |
 | Framework | Vite |
 | Build Command | `npm run build` |
 | Output Directory | `dist` |
@@ -89,7 +108,64 @@ while your Railway account is pending. The repository is prepared for deployment
 no new hosted deployment is created by these code changes. See
 [Vercel's Vite guide](https://vercel.com/docs/frameworks/frontend/vite).
 
-### Enable live questions and uploads later
+### Deploy frontend and backend together on Vercel
+
+Alternatively, import **your fork** with Root Directory set to the repository
+root (`.`). The root `vercel.json` configures Vercel Services, currently in
+[Beta](https://vercel.com/docs/services):
+
+| Service | Public paths | Runtime |
+| --- | --- | --- |
+| `api` | `/api/*`, including `/api/health` and `/api/docs` | Python 3.12 / FastAPI |
+| `web` | All remaining paths, including `/ask` and `/submit` | Vite static frontend |
+
+The browser calls the public API with `VITE_API_BASE_URL=/api`. No internal
+service bindings are needed: this frontend has no server-side function calling
+another service. Bindings exist only in functions at runtime, not in Vite's
+browser code or during its build. The FastAPI wrapper mounts the existing app
+at `/api`, matching Vercel's preserved request paths. Other hosts can continue
+running `app.main:app` without the prefix.
+
+Configure these values privately in your new Vercel project's environment settings:
+
+- Backend: the MongoDB, Cloudinary, OpenAI, admin-token and quota settings listed
+  in `backend/.env.example`. Never prefix secrets with `VITE_`.
+- Frontend: `VITE_API_BASE_URL=/api` and `VITE_ENABLE_LIVE=true` when ready to
+  enable the live forms. Rebuild after changing these build-time values.
+- `FRONTEND_ORIGINS`: your own frontend's exact origin. Same-origin `/api` calls
+  do not need cross-origin permission, but this still governs other browser clients.
+
+You can reuse your own existing MongoDB Atlas cluster. Check the selected
+database's `resources` collection has the `BuddysBrainIndex` vector search index
+on `embedding`, compatible with the existing 384-dimensional MiniLM vectors;
+also check database-user permissions and network access from the deployment.
+The MongoDB account and cluster alone do not create the vector search index.
+The backend also needs permission to create the quota collection's TTL index.
+
+Both services are public under the routes above even if `VITE_ENABLE_LIVE=false`:
+that flag hides frontend forms, not the backend. To block expensive API work,
+set `LIVE_REQUESTS_PER_DAY=0`. Existing deletion authentication still applies.
+
+The backend's `pyproject.toml` selects CPU-only PyTorch wheels on Linux through
+uv, and the embedding model loads lazily into Vercel's writable temporary cache.
+The cache is ephemeral; new instances may download the model again. ML dependencies
+can exceed the standard Python bundle limit. Check
+[large-function support and current limits](https://vercel.com/docs/functions/limitations)
+for your project; eligible existing projects can enable it with
+`VERCEL_SUPPORT_LARGE_FUNCTIONS=1`. The hosted build, bundle size, memory usage
+and cold-start latency still need verification with the actual deployment.
+
+Uploads are capped at **4 MB** on Vercel to leave multipart overhead beneath
+its 4.5 MB request-body limit. Other hosts retain the existing 10 MiB file limit.
+Larger uploads would require a separate direct-to-storage upload flow.
+
+With the Vercel CLI and service dependencies installed, run `vercel dev` from
+the repository root to exercise both services together. Check `/api/health`
+for liveness, then a real upload and question to verify MongoDB, vector retrieval
+and AI access. Health alone does not check external services. Local automated
+tests use mocked services and do not prove a hosted deployment works.
+
+### Enable live questions and uploads with a separate backend
 
 1. Deploy your own backend with MongoDB/vector index, OpenAI and Cloudinary values.
 2. Set backend `FRONTEND_ORIGINS` to your frontend's exact origin, such as
@@ -175,7 +251,7 @@ Image data is subject to the existing upload size limit separately.
 
 MongoDB vectors and the `all-MiniLM-L6-v2` embedding model are unchanged; existing
 resources need no reindexing. The standalone search utility uses the same client:
-run `python -m app.utils.summarization.Search.main` from the backend directory with
+run `python -m app.services.cli_search` from the backend directory with
 its `resources.json` input in that working directory.
 
 Migration references: [Luna model](https://developers.openai.com/api/docs/models/gpt-6-luna),
@@ -186,13 +262,13 @@ latency and cost still need measurement with your own configured services.
 
 ### Starting the Server
 
-From `BuddysBrain-Backend`, with the virtual environment active:
+From `backend`, with the virtual environment active:
 
 ```bash
 uvicorn app.main:app --reload --port 8000
 ```
 
-For the frontend, enter `BuddysBrain-Frontend/my-vite-app`, run `npm ci`, copy
+For the frontend, enter `frontend`, run `npm ci`, copy
 `.env.example` to `.env`, and run `npm run dev`. Set `VITE_API_BASE_URL` to your
 backend address and set `VITE_ENABLE_LIVE=true` only for live use. Rebuild the
 frontend when these values change. No secret belongs
@@ -225,7 +301,7 @@ Deploying this fork requires your own services; no changes here update the origi
 
 ### Tests without accounts or API keys
 
-From `BuddysBrain-Backend`:
+From `backend`:
 
 ```bash
 python3 -m venv .venv
@@ -238,7 +314,7 @@ These tests exercise the FastAPI routes with mocked database, AI, storage and
 embedding dependencies. They block network access and do not download an embedding
 model. Install `requirements.txt` instead when running the actual backend.
 
-From `BuddysBrain-Frontend/my-vite-app`:
+From `frontend`:
 
 ```bash
 npm ci

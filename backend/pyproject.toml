@@ -1,0 +1,36 @@
+[project]
+name = "buddysbrain-backend"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]",
+    "motor",
+    "pydantic>=2,<3",
+    "python-dotenv",
+    "openai>=2.54,<3",
+    "python-docx",
+    "pdfplumber",
+    "youtube-transcript-api>=1.2,<2",
+    "requests>=2.32,<3",
+    "urllib3>=2.6,<3",
+    "cloudinary",
+    "python-multipart",
+    "sentence-transformers",
+    "torch",
+    "scikit-learn",
+    "scipy",
+]
+
+[tool.uv]
+package = false
+
+# Vercel uses uv. Install CPU wheels on Linux instead of CUDA dependencies.
+# Keep the pip requirements files for the existing local/test workflows.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

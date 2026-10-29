@@ -1,10 +1,13 @@
-BuddysBrain-Backend/.env
-BuddysBrain-Backend/app/utils/summarization/.env
-BuddysBrain-Frontend/my-vite-app/.env
 .env
 .env.*
 !.env.example
 .venv/
+venv/
 __pycache__/
 *.pyc
 .pytest_cache/
+node_modules/
+dist/
+.vercel/
+.DS_Store
+.idea/
